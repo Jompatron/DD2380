@@ -73,11 +73,6 @@ class PlayerControllerMinimax(PlayerController):
         :rtype: str
         """
 
-        # EDIT THIS METHOD TO RETURN BEST NEXT POSSIBLE MODE USING MINIMAX ###
-
-        # NOTE: Don't forget to initialize the children of the current node
-        #       with its compute_and_get_children() method!
-
         bestMove = None
         bestScore = float("-inf")
         startTime = time.time()
@@ -190,6 +185,7 @@ class PlayerControllerMinimax(PlayerController):
         #print("Evaluating Node - Player 0 score:", max_score, "Player 1 score:", min_score, "Evaluation score:", score)
         return score
 
+    # helper function to calculate eucledian distance
     def hypot(self, x, y):
         return (x**2 + y**2)**(1/2)
 
