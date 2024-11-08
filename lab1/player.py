@@ -39,8 +39,6 @@ class PlayerControllerMinimax(PlayerController):
 
         # Generate game tree object
         first_msg = self.receiver()
-        # Initialize your minimax model
-        #model = self.initialize_model(initial_data=first_msg)
 
         while True:
             msg = self.receiver()
@@ -52,24 +50,25 @@ class PlayerControllerMinimax(PlayerController):
 
             # Possible next moves: "stay", "left", "right", "up", "down"
 
-            score, best_move = self.searching(node = node)
+
+            score, best_move = self.search(num_interation = 10, node = node)
 
             global Lvl1_nodes
             global Lvl1_scores
             Lvl1_scores = []
             Lvl1_nodes = []
 
-            self.sender({"action": best_move})
+            self.sender({"action": best_move, "search_time": None})
 
 
-    # searching down a given max depth
-    def searching(self, node):
-        num_iterations = 10
-        
+    # search with max depth given
+    def search(self, num_interation, node):
+
         global Lvl1_nodes
         global Lvl1_scores
 
         for i in range(1, num_interation):
+
             score, move, timeout = self.next_best_move(currentNode = node, depth = i, alpha = -1000, beta = 1000, player = 0, maxDepth = i)
             
             Lvl1_nodes = self.sorting(Lvl1_nodes, Lvl1_scores)
@@ -100,7 +99,93 @@ class PlayerControllerMinimax(PlayerController):
             timeout = True
             #print("Timeout at depth:", maxDepth)
             evaluation = self.heuristic(currentNode)
-            
+            if currentNode.move is not None:
+                next_move = currentNode.move
+            else:
+                next_move = 0
+            return evaluation, ACTION_TO_STR[next_move], timeout
+        
+        children = currentNode.compute_and_get_children()
+
+        if depth == 0:
+            evaluation = self.heuristic(currentNode)
+            timeout = False
+            return evaluation, ACTION_TO_STR[currentNode.move], timeout
+
+        if player == 0:
+            maxVal = -1000 # Want to maximise, give worst possible value to start
+            next_move = -1
+            for child in children:
+                childVal, returnMove, timeout = self.next_best_move(child, depth-1, alpha, beta, 1, maxDepth)
+                if depth == maxDepth: # If at root node
+                    Lvl1_scores.append(childVal)
+                if childVal > maxVal:
+                    next_move = returnMove
+                    maxVal = childVal
+                alpha = max(alpha, maxVal)
+                if beta <= alpha:
+                    break
+            return maxVal, next_move, timeout
+        else:
+            minVal = 1000 # Want to minimise, give worst possible value to start
+            next_move = -1
+            for child in children:
+                childVal, returnMove, timeout = self.next_best_move(child, depth-1, alpha, beta, 0, maxDepth)
+                if childVal < minVal:
+                    next_move = returnMove
+                    minVal = childVal
+                beta = min(beta, minVal)
+                if beta <= alpha:
+                    break
+            return minVal, next_move, timeout
+
+
     def heuristic(self, currentNode):
+
+        # Current player scores --> (0, 10)
+        playerScore =  currentNode.state.get_player_scores()
+        # Fish positions --> {0: (6, 16), 1: (1, 14), 3: (8, 13), 4: (19, 6)}
+        fishPos = currentNode.state.get_fish_positions()
+        # Hook positions --> {0: (6, 12), 1: (11, 16)}
+        hookPos = currentNode.state.get_hook_positions()
+        # Fish scores --> {0: 11, 1: 2, 2: 10, 3: 2, 4: 11}
+        fishScore = currentNode.state.get_fish_scores()
+
+
+        fishPos_keys = fishPos.keys()
+        
+        fishDis0 = {}   # contains all fish ditances to hook of player 0
+        fishDis1 = {}   # contains all fish ditances to hook of player 1
+        fishPoints = {} # contains score of remaining fish
+
+        evaluation = 0
+
+        closestDistance0 = 0
+        
+        playerFishScore0 = 0
+        playerFishScore1 = 0
+        
+        
+        if fishPos:
+            for key in fishPos_keys:
+                #if fishScore[key] > 0:
+                x_dis_zero=min(abs(fishPos[key][0] - hookPos[0][0]), 20-abs(fishPos[key][0] - hookPos[0][0]))
+                x_dis_one=min(abs(fishPos[key][0] - hookPos[1][0]), 20-abs(fishPos[key][0] - hookPos[1][0]))
+                y_dis_zero = fishPos[key][1]-hookPos[0][1]
+                y_dis_one = fishPos[key][1]-hookPos[1][1]
+                fishDis0[key] = ((x_dis_zero)**2 + (y_dis_zero)**2)**0.5
+                fishDis1[key] = ((x_dis_one)**2 + (y_dis_one)**2)**0.5
+                fishPoints[key] = fishScore[key]
+
+           
+            # Make sure fishDis is populated, aka nonzero score fish are remaining:
+            if fishDis0:
+                closestDistance0 = min(fishDis0.values())
+                
+                playerFishScore0 = sum({key: fishPoints[key] / (fishDis0.get(key, 0) + 0.01) for key in fishDis0 if key in fishPoints}.values())
+                playerFishScore1 = sum({key: fishPoints[key] / (fishDis1.get(key, 0) + 0.01) for key in fishDis1 if key in fishPoints}.values())
+
+
+        evaluation = 0.55 * (playerScore[0] - playerScore[1]) + 0.5 *(playerFishScore0 - playerFishScore1) - closestDistance0
         
         return evaluation
