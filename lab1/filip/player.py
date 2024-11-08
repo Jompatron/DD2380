@@ -73,6 +73,7 @@ class PlayerControllerMinimax(PlayerController):
         startTime = time.time()
         timeLimit = 75*1e-3 / 1.5 # add some margin
 
+        # iterative deepening search
         for depth in range(1, self.maxDepthLimit+1):
             self.depth_limit = depth
             try:
