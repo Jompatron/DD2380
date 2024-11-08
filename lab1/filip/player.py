@@ -30,7 +30,9 @@ class PlayerControllerMinimax(PlayerController):
 
     def __init__(self):
         super(PlayerControllerMinimax, self).__init__()
-        self.maxDepthLimit = 8
+        self.maxDepthLimit = 12
+        self.maxDepthReached = 0 # See the largest depth
+        self.transpositions = {}
 
     def player_loop(self):
         """
@@ -53,6 +55,14 @@ class PlayerControllerMinimax(PlayerController):
             # Execute next action
             self.sender({"action": best_move, "search_time": None})
 
+    def get_state_key(self, node: Node):
+        # Create a hashable state representation
+        fish_pos = node.state.get_fish_positions()
+        hook_pos = node.state.get_hook_positions()
+        fish_scores = node.state.get_fish_scores()
+        game_score = node.state.get_player_scores()
+        return hash((tuple(fish_pos.items()), tuple(hook_pos), tuple(fish_scores.items()), tuple(game_score)))
+
     def search_best_next_move(self, initial_tree_node: Node) -> str:
         """
         Use minimax (and extensions) to find best possible next move for player 0 (green boat)
@@ -71,7 +81,7 @@ class PlayerControllerMinimax(PlayerController):
         bestMove = None
         bestScore = float("-inf")
         startTime = time.time()
-        timeLimit = 75*1e-3 / 1.5 # add some margin
+        timeLimit = 75*1e-3 - 0.025 # add some margin
 
         # iterative deepening search
         for depth in range(1, self.maxDepthLimit+1):
@@ -82,25 +92,40 @@ class PlayerControllerMinimax(PlayerController):
                 if currScore > bestScore:
                     bestScore = currScore
                     bestMove = currMove
+                    #print("Best move updated:", bestMove)
 
             except TimeoutError:
                 break # exit if time is up
 
+        print("Max depth reached:", self.maxDepthReached)
+        
         return ACTION_TO_STR[bestMove] if bestMove is not None else "stay"
 
     def minimax(self, node: Node, depth: int, maxPlayer: bool, alpha=float("-inf"), beta=float("inf"), startTime=None, timeLimit=None):
         # check if time limit has been exceeded
         timeDiff = time.time() - startTime
-        #print("Curr time:", timeDiff)
+
+        #state_key = self.get_state_key(node)
+
+        #if state_key in self.transpositions and depth >= self.transpositions[state_key]["depth"]:
+            #print("State key found")
+            #return self.transpositions[state_key]["move"], self.transpositions[state_key]["eval"]
+        
+        if depth > self.maxDepthReached:
+            print("Max depth reached:", depth)
+            self.maxDepthReached = depth
         
         # check depth limit and terminal state
         if depth == self.depth_limit or self.is_terminal(node) or timeDiff > timeLimit: # add some margin for time limit
-            return None, self.evaluate(node)
-        
+            eval_score = self.evaluate(node)
+            #self.transpositions[state_key] = {"eval": eval_score, "move": None, "depth": depth}
+            return None, eval_score
+
         if maxPlayer:
             max_eval = float("-inf")
             best_move = None
             children = node.compute_and_get_children()
+            children = sorted(children, key=lambda c: self.evaluate(c), reverse=True) # move ordering
             for child in children:
                 _, eval = self.minimax(child, depth + 1, False, alpha, beta, startTime, timeLimit)
 
@@ -110,12 +135,14 @@ class PlayerControllerMinimax(PlayerController):
                 alpha = max(alpha, eval)
                 if beta <= alpha:
                     break
+            #self.transpositions[state_key] = {"eval": max_eval, "move": best_move, "depth": depth}
             return best_move, max_eval
 
         else:
             min_eval = float("inf")
             best_move = None
             children = node.compute_and_get_children()
+            children = sorted(children, key=lambda c: self.evaluate(c)) # move ordering
             for child in children:
                 _, eval = self.minimax(child, depth + 1, True, alpha, beta, startTime, timeLimit)
 
