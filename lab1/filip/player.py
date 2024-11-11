@@ -92,7 +92,7 @@ class PlayerControllerMinimax(PlayerController):
             except TimeoutError:
                 break # exit if time is up
 
-        print("Max depth reached:", self.maxDepthReached)
+        #print("Max depth reached:", self.maxDepthReached)
         
         return ACTION_TO_STR[bestMove] if bestMove is not None else "stay"
 
@@ -107,7 +107,7 @@ class PlayerControllerMinimax(PlayerController):
             #return self.transpositions[state_key]["move"], self.transpositions[state_key]["eval"]
         
         if depth > self.maxDepthReached:
-            print("Max depth reached:", depth)
+            #print("Max depth reached:", depth)
             self.maxDepthReached = depth
         
         # check depth limit and terminal state
@@ -188,7 +188,3 @@ class PlayerControllerMinimax(PlayerController):
     # helper function to calculate eucledian distance
     def hypot(self, x, y):
         return (x**2 + y**2)**(1/2)
-
-
-
-
