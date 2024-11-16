@@ -30,7 +30,7 @@ class PlayerControllerMinimax(PlayerController):
 
     def __init__(self):
         super(PlayerControllerMinimax, self).__init__()
-        self.maxDepthLimit = 12
+        self.maxDepthLimit = 100
         self.maxDepthReached = 0 # See the largest depth
         self.transpositions = {}
 
@@ -61,7 +61,15 @@ class PlayerControllerMinimax(PlayerController):
         hook_pos = node.state.get_hook_positions()
         fish_scores = node.state.get_fish_scores()
         game_score = node.state.get_player_scores()
-        return hash((tuple(fish_pos.items()), tuple(hook_pos), tuple(fish_scores.items()), tuple(game_score)))
+        player_turn = node.state.get_player()
+        # Also include current depth and whether it's max player's turn for proper transposition lookup
+        return hash((
+            player_turn, # same position might have different optimal moves depending on player turn
+            tuple(sorted(fish_pos.items())),  # Sort to ensure consistent ordering
+            tuple(hook_pos),
+            tuple(sorted(fish_scores.items())), # Sort to ensure consistent ordering
+            tuple(game_score)
+        ))
 
     def search_best_next_move(self, initial_tree_node: Node) -> str:
         """
@@ -97,29 +105,33 @@ class PlayerControllerMinimax(PlayerController):
         return ACTION_TO_STR[bestMove] if bestMove is not None else "stay"
 
     def minimax(self, node: Node, depth: int, maxPlayer: bool, alpha=float("-inf"), beta=float("inf"), startTime=None, timeLimit=None):
-        # check if time limit has been exceeded
         timeDiff = time.time() - startTime
+        state_key = self.get_state_key(node)
 
-        #state_key = self.get_state_key(node)
-
-        #if state_key in self.transpositions and depth >= self.transpositions[state_key]["depth"]:
-            #print("State key found")
-            #return self.transpositions[state_key]["move"], self.transpositions[state_key]["eval"]
+        if state_key in self.transpositions:
+            stored = self.transpositions[state_key]
+            if stored["depth"] >= self.depth_limit - depth:
+                #print("Transposition hit")
+                return stored["move"], stored["eval"]
         
         if depth > self.maxDepthReached:
-            #print("Max depth reached:", depth)
+            print("Max depth reached:", depth)
             self.maxDepthReached = depth
         
-        # check depth limit and terminal state
-        if depth == self.depth_limit or self.is_terminal(node) or timeDiff > timeLimit: # add some margin for time limit
+        # terminal conditions
+        if depth == self.depth_limit or self.is_terminal(node) or timeDiff > timeLimit:
             eval_score = self.evaluate(node)
-            #self.transpositions[state_key] = {"eval": eval_score, "move": None, "depth": depth}
+            self.transpositions[state_key] = {
+                "eval": eval_score,
+                "move": None,
+                "depth": self.depth_limit - depth  # Store remaining depth instead of current depth
+            }
             return None, eval_score
 
+        best_move = None
+        children: Node = node.compute_and_get_children()
         if maxPlayer:
             max_eval = float("-inf")
-            best_move = None
-            children = node.compute_and_get_children()
             children = sorted(children, key=lambda c: self.evaluate(c), reverse=True) # move ordering
             for child in children:
                 _, eval = self.minimax(child, depth + 1, False, alpha, beta, startTime, timeLimit)
@@ -130,13 +142,16 @@ class PlayerControllerMinimax(PlayerController):
                 alpha = max(alpha, eval)
                 if beta <= alpha:
                     break
-            #self.transpositions[state_key] = {"eval": max_eval, "move": best_move, "depth": depth}
+            # Store in transposition table with remaining depth
+            self.transpositions[state_key] = {
+                "eval": max_eval,
+                "move": best_move,
+                "depth": self.depth_limit - depth
+            }
             return best_move, max_eval
 
         else:
             min_eval = float("inf")
-            best_move = None
-            children = node.compute_and_get_children()
             children = sorted(children, key=lambda c: self.evaluate(c)) # move ordering
             for child in children:
                 _, eval = self.minimax(child, depth + 1, True, alpha, beta, startTime, timeLimit)
@@ -147,6 +162,12 @@ class PlayerControllerMinimax(PlayerController):
                 beta = min(beta, eval)
                 if beta <= alpha:
                     break
+            # Store in transposition table with remaining depth
+            self.transpositions[state_key] = {
+                "eval": min_eval,
+                "move": best_move,
+                "depth": self.depth_limit - depth
+            }
             return best_move, min_eval
 
     # If no more fish from this state, it's terminal state
