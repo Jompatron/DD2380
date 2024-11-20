@@ -55,18 +55,28 @@ class PlayerControllerMinimax(PlayerController):
                 if currMove is not None:
                     bestMove = currMove
 
-                """ if self.depth_limit > self.max_depth_limit:
-                    print(f"Reached depth {self.depth_limit}")
-                    self.max_depth_limit = self.depth_limit """
+                #if self.depth_limit > self.max_depth_limit:
+                #    print(f"Reached depth {self.depth_limit}")
+                #    self.max_depth_limit = self.depth_limit
                 depth += 1
             except TimeoutError:
                 break  # Exit if time is up
 
         return ACTION_TO_STR[bestMove] if bestMove is not None else "stay"
     
-    def normalize_state(self, state):
+    def normalize_state(self, state: Node) -> tuple:
         """
         Normalize the game state to a canonical form to handle symmetric placements.
+
+        Example:
+        Imagine a simple 1D board with a fish at position 2 and a hook at position 5. The board has symmetry, so flipping the board horizontally creates an equivalent state.
+
+        Possible Representations:
+            Original: Fish at 2, Hook at 5 → Serialized as ((2,), (5,)).
+            Flipped: Fish at 18, Hook at 15 (assuming board width 20) → Serialized as ((18,), (15,)).
+        Smallest Serialized State:
+            Lexicographically, ((2,), (5,)) is smaller than ((18,), (15,)).
+            Therefore, we normalize the state to ((2,), (5,)).
         """
         fish_positions = state.get_fish_positions()
         hook_positions = state.get_hook_positions()
@@ -95,7 +105,8 @@ class PlayerControllerMinimax(PlayerController):
             {player: (pos[0], -pos[1]) for player, pos in hook_positions.items()},
         ))
 
-        # Normalize: Select the lexicographically smallest serialized state
+        print(symmetric_states)
+        # Create a simple and deterministic rule to pick the "best" state
         return min(symmetric_states)
 
 
