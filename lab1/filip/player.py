@@ -23,6 +23,7 @@ class PlayerControllerMinimax(PlayerController):
         self.depth_limit = None
         self.transposition_table = {}  # Cache for evaluated nodes
         self.TOTAL_WIDTH = 20
+        self.max_depth_limit = 0 # Keep track of depth
 
     def player_loop(self):
         first_msg = self.receiver()
@@ -53,11 +54,50 @@ class PlayerControllerMinimax(PlayerController):
                 )
                 if currMove is not None:
                     bestMove = currMove
+
+                """ if self.depth_limit > self.max_depth_limit:
+                    print(f"Reached depth {self.depth_limit}")
+                    self.max_depth_limit = self.depth_limit """
                 depth += 1
             except TimeoutError:
                 break  # Exit if time is up
 
         return ACTION_TO_STR[bestMove] if bestMove is not None else "stay"
+    
+    def normalize_state(self, state):
+        """
+        Normalize the game state to a canonical form to handle symmetric placements.
+        """
+        fish_positions = state.get_fish_positions()
+        hook_positions = state.get_hook_positions()
+
+        symmetric_states = []
+
+        # Helper function to serialize state for comparison
+        def serialize(fish_positions, hook_positions):
+            # Convert dictionaries to sorted tuples
+            fish_serialized = tuple(sorted(fish_positions.items()))
+            hook_serialized = tuple(sorted(hook_positions.items()))
+            return (fish_serialized, hook_serialized)
+
+        # Original positions
+        symmetric_states.append(serialize(fish_positions, hook_positions))
+
+        # Horizontal flip
+        symmetric_states.append(serialize(
+            {fish_id: (20 - pos[0], pos[1]) for fish_id, pos in fish_positions.items()},
+            {player: (20 - pos[0], pos[1]) for player, pos in hook_positions.items()},
+        ))
+
+        # Vertical flip
+        symmetric_states.append(serialize(
+            {fish_id: (pos[0], -pos[1]) for fish_id, pos in fish_positions.items()},
+            {player: (pos[0], -pos[1]) for player, pos in hook_positions.items()},
+        ))
+
+        # Normalize: Select the lexicographically smallest serialized state
+        return min(symmetric_states)
+
 
     def minimax(self, node: Node, depth: int, maxPlayer: bool, alpha: float, beta: float):
         # Time check
@@ -65,7 +105,7 @@ class PlayerControllerMinimax(PlayerController):
             raise TimeoutError
 
         # Transposition table lookup
-        node_hash = hash(node.state)
+        node_hash = hash(self.normalize_state(node.state))
         if node_hash in self.transposition_table:
             stored_depth, stored_value = self.transposition_table[node_hash]
             if stored_depth > depth:  # Keep only deeper evaluations
@@ -163,7 +203,11 @@ class PlayerControllerMinimax(PlayerController):
 
         return heuristic_score
 
-    def calculate_distance(self, pos1, pos2):
+
+    def calculate_distance(self, pos1, pos2, euc=True):
         xDist = min(abs(pos1[0] - pos2[0]), self.TOTAL_WIDTH - abs(pos1[0] - pos2[0]))
         yDist = abs(pos1[1] - pos2[1])
-        return (xDist ** 2 + yDist ** 2) ** 0.5
+        if euc:
+            return (xDist ** 2 + yDist ** 2) ** 0.5
+        else:
+            return xDist + yDist
