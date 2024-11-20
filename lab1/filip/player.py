@@ -105,7 +105,7 @@ class PlayerControllerMinimax(PlayerController):
             {player: (pos[0], -pos[1]) for player, pos in hook_positions.items()},
         ))
 
-        print(symmetric_states)
+        #print(symmetric_states)
         # Create a simple and deterministic rule to pick the "best" state
         return min(symmetric_states)
 
