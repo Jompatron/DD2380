@@ -1,187 +1,184 @@
 import sys
-from math import log
+import math
 
-class HMM:
+class HiddenMarkovModel:
     def __init__(self):
-        self.transition_matrix = []
-        self.emission_matrix = []
-        self.initial_state = []
-        self.emissions = []
-        
-    def read_input(self):
-        data = sys.stdin.read().strip().split('\n')
-        self.transition_matrix = self.read_matrix(data[0])
-        self.emission_matrix = self.read_matrix(data[1])
-        self.initial_state = self.read_vector(data[2])
-        self.emissions = self.read_emissions(data[3])
-        
-    def read_emissions(self, line):
-        parts = list(map(int, line.split()))
-        return parts[1:]
-        
-    def read_matrix(self, line):
-        parts = list(map(float, line.split()))
-        rows, cols = int(parts[0]), int(parts[1])
-        values = parts[2:]
-        return [values[i * cols:(i + 1) * cols] for i in range(rows)]
-        
-    def read_vector(self, line):
-        parts = list(map(float, line.split()))
-        return parts[2:]  # Skip dimensions
-        
-    def forward_pass(self, emissions):
-        N = len(self.transition_matrix)
-        T = len(emissions)
-        alpha = [[0.0] * N for _ in range(T)]
-        scale = [0.0] * T
-        
-        # Initialize first time step
-        for i in range(N):
-            alpha[0][i] = self.initial_state[i] * self.emission_matrix[i][emissions[0]]
-        scale[0] = sum(alpha[0])
-        for i in range(N):
-            alpha[0][i] /= scale[0]
-        
-        # Forward pass
-        for t in range(1, T):
-            for j in range(N):
-                sum_alpha = 0.0
-                for i in range(N):
-                    sum_alpha += alpha[t-1][i] * self.transition_matrix[i][j]
-                alpha[t][j] = sum_alpha * self.emission_matrix[j][emissions[t]]
-            
-            scale[t] = sum(alpha[t])
-            for j in range(N):
-                alpha[t][j] /= scale[t]
-            
-        return alpha, scale
-        
-    def backward_pass(self, emissions, scale):
-        N = len(self.transition_matrix)
-        T = len(emissions)
-        beta = [[0.0] * N for _ in range(T)]
-        
-        # Initialize last time step
-        for i in range(N):
-            beta[T-1][i] = 1.0 / scale[T-1]
-        
-        # Backward pass
-        for t in range(T-2, -1, -1):
-            for i in range(N):
-                sum_beta = 0.0
-                for j in range(N):
-                    sum_beta += (self.transition_matrix[i][j] * 
-                               self.emission_matrix[j][emissions[t+1]] * 
-                               beta[t+1][j])
-                beta[t][i] = sum_beta / scale[t]
-            
-        return beta
-    
-    def compute_di_gamma(self, t, alpha, beta, emission):
-        N = len(self.transition_matrix)
-        xi = [[0.0] * N for _ in range(N)]
-        sum_xi = 0.0
-        
-        for i in range(N):
-            for j in range(N):
-                xi[i][j] = (alpha[t][i] * 
-                           self.transition_matrix[i][j] * 
-                           self.emission_matrix[j][emission] * 
-                           beta[t+1][j])
-                sum_xi += xi[i][j]
-                
-        # Normalize xi
-        for i in range(N):
-            for j in range(N):
-                xi[i][j] /= sum_xi if sum_xi > 0 else 1.0
-                
-        return xi
-    
-    def compute_gamma(self, t, alpha, beta):
-        N = len(self.transition_matrix)
-        gamma = [0.0] * N
-        sum_gamma = 0.0
-        
-        for i in range(N):
-            gamma[i] = alpha[t][i] * beta[t][i]
-            sum_gamma += gamma[i]
-            
-        # Normalize gamma
-        for i in range(N):
-            gamma[i] /= sum_gamma if sum_gamma > 0 else 1.0
-            
-        return gamma
-    
-    def baum_welch(self, max_iter=100, eps=1e-6):
-        old_log_prob = float('-inf')
-        
-        for iteration in range(max_iter):
-            # E-step
-            alpha, scale = self.forward_pass(self.emissions)
-            beta = self.backward_pass(self.emissions, scale)
-            
+        self.transition_matrix = []   # Transition probabilities
+        self.emission_matrix = []    # Emission probabilities
+        self.initial_distribution = []  # Initial state probabilities
+        self.observation_sequence = []  # Sequence of observations
+
+    # Read input and initialize matrices
+    def load_input(self):
+        transition_data = self._parse_input(sys.stdin.readline().split(), "float")
+        emission_data = self._parse_input(sys.stdin.readline().split(), "float")
+        initial_data = self._parse_input(sys.stdin.readline().split(), "float")
+        observations = self._parse_input(sys.stdin.readline().split(), "int")
+        self.observation_sequence = observations[1:]  # Exclude count of observations
+
+        # Initialize matrices
+        self.transition_matrix = self._create_matrix(transition_data[2:], int(transition_data[0]), int(transition_data[1]))
+        self.emission_matrix = self._create_matrix(emission_data[2:], int(emission_data[0]), int(emission_data[1]))
+        self.initial_distribution = self._create_matrix(initial_data[2:], int(initial_data[0]), int(initial_data[1]))
+
+    # Create a matrix of given dimensions
+    def _create_matrix(self, values, rows, cols):
+        return [values[i:i+cols] for i in range(0, len(values), cols)]
+
+    # Parse input and convert to the desired type
+    def _parse_input(self, raw_data, data_type):
+        if data_type == "float":
+            return [float(item) for item in raw_data]
+        elif data_type == "int":
+            return [int(item) for item in raw_data]
+
+    # Forward pass (alpha computation)
+    def forward_pass(self):
+        num_states = len(self.transition_matrix)
+        num_observations = len(self.observation_sequence)
+        alpha_values = [[]]
+        normalized_alpha = [[]]
+        scaling_factors = []
+
+        # Compute alpha_0
+        initial_scale = 0
+        for state in range(num_states):
+            alpha_0 = self.initial_distribution[0][state] * self.emission_matrix[state][self.observation_sequence[0]]
+            alpha_values[0].append(alpha_0)
+            initial_scale += alpha_0
+
+        # Normalize alpha_0
+        scaling_factor_0 = 1 / initial_scale if initial_scale != 0 else 1e-10
+        scaling_factors.append(scaling_factor_0)
+        normalized_alpha[0] = [alpha * scaling_factor_0 for alpha in alpha_values[0]]
+
+        # Compute alpha_t
+        for time in range(1, num_observations):
+            scale_t = 0
+            current_alpha = []
+            for state in range(num_states):
+                alpha_t = sum(normalized_alpha[time-1][prev_state] * self.transition_matrix[prev_state][state]
+                              for prev_state in range(num_states))
+                alpha_t *= self.emission_matrix[state][self.observation_sequence[time]]
+                current_alpha.append(alpha_t)
+                scale_t += alpha_t
+            # Normalize
+            scaling_factor_t = 1 / scale_t if scale_t != 0 else 1e-10
+            scaling_factors.append(scaling_factor_t)
+            alpha_values.append(current_alpha)
+            normalized_alpha.append([alpha * scaling_factor_t for alpha in current_alpha])
+
+        return alpha_values, normalized_alpha, scaling_factors
+
+    # Backward pass (beta computation)
+    def backward_pass(self, scaling_factors):
+        num_states = len(self.transition_matrix)
+        num_observations = len(self.observation_sequence)
+        beta_values = [[scaling_factors[-1]] * num_states for _ in range(num_observations)]
+
+        # Compute beta_t
+        for time in range(num_observations - 2, -1, -1):
+            for state in range(num_states):
+                beta_values[time][state] = sum(self.transition_matrix[state][next_state] *
+                                               self.emission_matrix[next_state][self.observation_sequence[time+1]] *
+                                               beta_values[time+1][next_state]
+                                               for next_state in range(num_states))
+                beta_values[time][state] *= scaling_factors[time]
+
+        return beta_values
+
+    # Compute gamma and digamma
+    def compute_gammas(self, normalized_alphas, betas):
+        num_states = len(self.transition_matrix)
+        num_observations = len(self.observation_sequence)
+        gammas = []
+        digammas = []
+
+        for time in range(num_observations - 1):
+            gamma_t = [0] * num_states
+            digamma_t = [[0] * num_states for _ in range(num_states)]
+            denom = sum(normalized_alphas[time][i] * self.transition_matrix[i][j] *
+                        self.emission_matrix[j][self.observation_sequence[time+1]] *
+                        betas[time+1][j] for i in range(num_states) for j in range(num_states))
+            denom = denom if denom != 0 else 1e-10
+
+            for i in range(num_states):
+                gamma_t[i] = 0
+                for j in range(num_states):
+                    digamma_t[i][j] = (normalized_alphas[time][i] * self.transition_matrix[i][j] *
+                                       self.emission_matrix[j][self.observation_sequence[time+1]] *
+                                       betas[time+1][j]) / denom
+                    gamma_t[i] += digamma_t[i][j]
+            gammas.append(gamma_t)
+            digammas.append(digamma_t)
+
+        # Special case for the last gamma
+        gammas.append(normalized_alphas[-1])
+
+        return gammas, digammas
+
+    # Re-estimate model parameters
+    def reestimate_parameters(self, gammas, digammas):
+        num_states = len(self.transition_matrix)
+        num_symbols = len(self.emission_matrix[0])
+
+        # Re-estimate initial distribution
+        self.initial_distribution = [gammas[0]]
+
+        # Re-estimate transition matrix
+        for i in range(num_states):
+            denom = sum(gammas[t][i] for t in range(len(gammas) - 1))
+            denom = denom if denom != 0 else 1e-10
+            for j in range(num_states):
+                numer = sum(digammas[t][i][j] for t in range(len(digammas)))
+                self.transition_matrix[i][j] = numer / denom
+
+        # Re-estimate emission matrix
+        for i in range(num_states):
+            denom = sum(gammas[t][i] for t in range(len(gammas)))
+            denom = denom if denom != 0 else 1e-10
+            for k in range(num_symbols):
+                numer = sum(gammas[t][i] for t in range(len(gammas)) if self.observation_sequence[t] == k)
+                self.emission_matrix[i][k] = numer / denom
+
+    # Baum-Welch algorithm
+    def train_model(self):
+        max_iterations = 50
+        iterations = 0
+        previous_log_prob = float('-inf')
+
+        while iterations < max_iterations:
+            # Forward and backward passes
+            alphas, normalized_alphas, scaling_factors = self.forward_pass()
+            betas = self.backward_pass(scaling_factors)
+
+            # Compute gammas and digammas
+            gammas, digammas = self.compute_gammas(normalized_alphas, betas)
+
+            # Re-estimate parameters
+            self.reestimate_parameters(gammas, digammas)
+
             # Compute log probability
-            log_prob = sum(log(s) if s > 0 else float('-inf') for s in scale)
-            if log_prob - old_log_prob < eps and iteration > 0:
+            log_prob = -sum(math.log(c) for c in scaling_factors)
+            if log_prob <= previous_log_prob:
                 break
-            old_log_prob = log_prob
-            
-            T = len(self.emissions)
-            N = len(self.transition_matrix)
-            M = len(self.emission_matrix[0])
-            
-            # M-step
-            # Update transition matrix
-            new_transition = [[0.0] * N for _ in range(N)]
-            for i in range(N):
-                denominator = 0.0
-                for t in range(T-1):
-                    gamma_t = self.compute_gamma(t, alpha, beta)
-                    denominator += gamma_t[i]
-                
-                for j in range(N):
-                    numerator = 0.0
-                    for t in range(T-1):
-                        xi = self.compute_di_gamma(t, alpha, beta, self.emissions[t+1])
-                        numerator += xi[i][j]
-                    new_transition[i][j] = numerator / denominator if denominator > 0 else 0.0
-            
-            # Update emission matrix
-            new_emission = [[0.0] * M for _ in range(N)]
-            for i in range(N):
-                denominator = 0.0
-                for t in range(T):
-                    gamma_t = self.compute_gamma(t, alpha, beta)
-                    denominator += gamma_t[i]
-                
-                for k in range(M):
-                    numerator = 0.0
-                    for t in range(T):
-                        if self.emissions[t] == k:
-                            gamma_t = self.compute_gamma(t, alpha, beta)
-                            numerator += gamma_t[i]
-                    new_emission[i][k] = numerator / denominator if denominator > 0 else 0.0
-            
-            self.transition_matrix = new_transition
-            self.emission_matrix = new_emission
+            previous_log_prob = log_prob
+            iterations += 1
+
+        # Output final matrices
+        print(self.format_matrix(self.transition_matrix))
+        print(self.format_matrix(self.emission_matrix))
 
     def format_matrix(self, matrix):
         rows = len(matrix)
         cols = len(matrix[0])
-        result = f"{rows} {cols}"
-        for row in matrix:
-            for val in row:
-                result += f" {val}"
-        return result
+        flat = [round(val, 6) for row in matrix for val in row]
+        return f"{rows} {cols} " + " ".join(map(str, flat))
 
 def main():
-    hmm = HMM()
-    hmm.read_input()
-    hmm.baum_welch()
-    
-    # Print results in required format
-    print(hmm.format_matrix(hmm.transition_matrix))
-    print(hmm.format_matrix(hmm.emission_matrix))
+    model = HiddenMarkovModel()
+    model.load_input()
+    model.train_model()
 
 if __name__ == "__main__":
     main()
