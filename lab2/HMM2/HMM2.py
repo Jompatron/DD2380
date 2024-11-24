@@ -80,10 +80,9 @@ class HMM:
             self.delta_vector.append(delta_t)
 
         # Return the most probable path
-        #print(self.delta_vector)
-        #print(backpointers)
+        print(self.delta_vector)
+        print(backpointers)
         self.print_path(backpointers, self.argmax(self.delta_vector[-1]))
-        #self.print_path(backpointers, self.argmax(self.delta_vector[-1]))
 
 def main():
     hmm = HMM()
