@@ -1,13 +1,26 @@
 import sys
 import math
 
+class InitialDistribution:
+    def __init__(self):
+        self.A = [[0.7, 0.05, 0.25],
+                    [0.1, 0.8, 0.1],
+                    [0.2, 0.3, 0.5]]
+        
+        self.B = [[0.7, 0.2, 0.1, 0.0],
+                [0.1, 0.4, 0.3, 0.2],
+                [0, 0.1, 0.2, 0.7]]
+    
+        self.pi = [0.1, 0, 0]
+
+start_from_init_dist = False
+
 class HiddenMarkovModel:
     def __init__(self, A=None, B=None, pi=None, observations=None):
         self.transition_matrix = A if A else []  # Transition probabilities
         self.emission_matrix = B if B else []    # Emission probabilities
         self.initial_distribution = pi if pi else []  # Initial state probabilities
         self.observation_sequence = observations if observations else []  # Sequence of observations
-
 
     # Read input and initialize matrices
     def load_input(self):
@@ -91,7 +104,6 @@ class HiddenMarkovModel:
 
         return beta_values
 
-    # Compute gamma and digamma
     def compute_gammas(self, normalized_alphas, betas):
         num_states = len(self.transition_matrix)
         num_observations = len(self.observation_sequence)
@@ -101,18 +113,27 @@ class HiddenMarkovModel:
         for time in range(num_observations - 1):
             gamma_t = [0] * num_states
             digamma_t = [[0] * num_states for _ in range(num_states)]
-            denom = sum(normalized_alphas[time][i] * self.transition_matrix[i][j] *
-                        self.emission_matrix[j][self.observation_sequence[time+1]] *
-                        betas[time+1][j] for i in range(num_states) for j in range(num_states))
-            denom = denom if denom != 0 else 1e-10
+            
+            # Improved denominator calculation
+            denom = 0
+            for i in range(num_states):
+                for j in range(num_states):
+                    temp = (normalized_alphas[time][i] * 
+                            self.transition_matrix[i][j] *
+                            self.emission_matrix[j][self.observation_sequence[time+1]] *
+                            betas[time+1][j])
+                    denom += temp
+
+            denom = max(denom, 1e-10)  # Prevent division by zero
 
             for i in range(num_states):
-                gamma_t[i] = 0
                 for j in range(num_states):
-                    digamma_t[i][j] = (normalized_alphas[time][i] * self.transition_matrix[i][j] *
-                                       self.emission_matrix[j][self.observation_sequence[time+1]] *
-                                       betas[time+1][j]) / denom
+                    digamma_t[i][j] = (normalized_alphas[time][i] * 
+                                    self.transition_matrix[i][j] *
+                                    self.emission_matrix[j][self.observation_sequence[time+1]] *
+                                    betas[time+1][j]) / denom
                     gamma_t[i] += digamma_t[i][j]
+            
             gammas.append(gamma_t)
             digammas.append(digamma_t)
 
@@ -147,16 +168,16 @@ class HiddenMarkovModel:
 
 
     def train_model(self, observations):
-
         self.observation_sequence = observations
         if not self.observation_sequence:
             raise ValueError("No observations provided for training.")
 
-        
-
-        max_iterations = 100
+        max_iterations = 100000
         iterations = 0
         previous_log_prob = float('-inf')
+        convergence_threshold = 1e-4
+
+        log_probabilities = []
 
         while iterations < max_iterations:
             # Forward and backward passes
@@ -171,14 +192,21 @@ class HiddenMarkovModel:
 
             # Compute log probability
             log_prob = -sum(math.log(c) for c in scaling_factors)
-            if log_prob <= previous_log_prob:
+            log_probabilities.append(log_prob)
+
+            if abs(log_prob - previous_log_prob) < convergence_threshold:
                 break
+
             previous_log_prob = log_prob
             iterations += 1
 
+        # Print convergence information
+        print(f"Iterations: {iterations}")
+        #print("Log Probabilities:", log_probabilities)
+        
         # Output final matrices
-        print(self.format_matrix(self.transition_matrix))
-        print(self.format_matrix(self.emission_matrix))
+        #print(self.format_matrix(self.transition_matrix))
+        #print(self.format_matrix(self.emission_matrix))
 
 
     def format_matrix(self, matrix):
@@ -197,7 +225,7 @@ def load_data_from_stdin():
         observations.extend(map(int, line.strip().split()))
     valid_observation_symbols = [0, 1, 2, 3]
     observations = [o for o in observations if o in valid_observation_symbols]
-    print("observations", observations)
+    #print("observations", observations)
     return observations
 
 def question_7(observations):
@@ -205,28 +233,72 @@ def question_7(observations):
     Train an HMM model on provided observations.
     """
     # Initialize parameters
-    A_initial = [[0.54, 0.26, 0.20],
-                 [0.19, 0.53, 0.28],
-                 [0.22, 0.18, 0.60]]
-    
-    B_initial = [[0.5, 0.2, 0.11, 0.19],
-            [0.22, 0.28, 0.23, 0.27],
-            [0.19, 0.21, 0.15, 0.45]]
+    if not start_from_init_dist:
+        A_initial = [[0.54, 0.26, 0.20],
+                    [0.19, 0.53, 0.28],
+                    [0.22, 0.18, 0.60]]
+        
+        B_initial = [[0.5, 0.2, 0.11, 0.19],
+                [0.22, 0.28, 0.23, 0.27],
+                [0.19, 0.21, 0.15, 0.45]]
 
     
-    pi_initial = [0.3, 0.2, 0.5]
+        pi_initial = [0.3, 0.2, 0.5]
+    else:
+        A_initial = [[0.7, 0.05, 0.25],
+                    [0.1, 0.8, 0.1],
+                    [0.2, 0.3, 0.5]]
+        
+        B_initial = [[0.7, 0.2, 0.1, 0.0],
+                [0.1, 0.4, 0.3, 0.2],
+                [0, 0.1, 0.2, 0.7]]
+    
+        pi_initial = [0.1, 0, 0]
 
     # Initialize HMM
     hmm = HiddenMarkovModel(A_initial, B_initial, pi_initial)
+    distribuion = InitialDistribution()
     
     # Train the HMM
     hmm.train_model(observations)  # Assuming train_model accepts observations as an argument
 
     # Output trained parameters
-    print("Trained parameters:")
-    print("A:", hmm.transition_matrix)
-    print("B:", hmm.emission_matrix)
-    print("pi:", hmm.initial_distribution)
+    #print("Trained parameters:")
+    #print("A:", hmm.transition_matrix)
+    #print("B:", hmm.emission_matrix)
+    #print("pi:", hmm.initial_distribution)
+
+    # Detailed difference calculations
+    calculate_and_print_differences(A_initial, hmm.transition_matrix, "Transition Matrix (A)")
+    calculate_and_print_differences(B_initial, hmm.emission_matrix, "Emission Matrix (B)")
+    calculate_and_print_differences(
+        [[x] for x in pi_initial], 
+        [[x] for x in hmm.initial_distribution], 
+        "Initial Distribution (π)"
+    )
+
+def calculate_difference(matrix1, matrix2):
+    """
+    Calculate the element-wise difference between two matrices.
+    """
+    return [[abs(matrix1[i][j] - matrix2[i][j]) for j in range(len(matrix1[0]))] for i in range(len(matrix1))]
+
+def calculate_and_print_differences(matrix1, matrix2, matrix_name):
+    """
+    Calculate and print differences with more detailed formatting
+    """
+    differences = calculate_difference(matrix1, matrix2)
+    print(f"\n{matrix_name} Differences:")
+    for row in differences:
+        print(" ".join(f"{diff:.6f}" for diff in row))
+    
+    # Calculate and print some summary statistics
+    all_diffs = [diff for row in differences for diff in row]
+    print(f"\n{matrix_name} Difference Statistics:")
+    print(f"Mean Absolute Difference: {sum(all_diffs) / len(all_diffs):.6f}")
+    print(f"Max Difference: {max(all_diffs):.6f}")
+    
+
 
 def main():
     """
