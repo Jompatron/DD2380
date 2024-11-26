@@ -1,19 +1,74 @@
 import sys
 import math
+from copy import deepcopy
 
-class InitialDistribution:
-    def __init__(self):
-        self.A = [[0.7, 0.05, 0.25],
-                    [0.1, 0.8, 0.1],
-                    [0.2, 0.3, 0.5]]
+class Distribution:
+    def __init__(self, start_from_goal_dist=False, no_hidden_states=3):
+        self.start_from_goal_dist = start_from_goal_dist
+        self.A_init = []
+        self.B_init = []
+        self.pi_init = []
+        self.no_hidden_states = no_hidden_states
+        self.set_distribution()
+
+    def set_distribution(self):
+        if self.no_hidden_states == 2:
+            # Add a specific configuration for 2 hidden states
+            self.A_init = [[0.7, 0.3],
+                        [0.2, 0.8]]
+            
+            self.B_init = [[0.6, 0.2, 0.1, 0.1],
+                        [0.1, 0.3, 0.3, 0.3]]
+            
+            self.pi_init = [0.5, 0.5]
+
+        elif self.start_from_goal_dist and self.no_hidden_states == 3:
+            # Existing 3-state configuration when start_from_goal_dist is True
+            self.A_init = [[0.7, 0.05, 0.25],
+                            [0.1, 0.8, 0.1],
+                            [0.2, 0.3, 0.5]]
         
-        self.B = [[0.7, 0.2, 0.1, 0.0],
-                [0.1, 0.4, 0.3, 0.2],
-                [0, 0.1, 0.2, 0.7]]
-    
-        self.pi = [0.1, 0, 0]
+            self.B_init = [[0.7, 0.2, 0.1, 0.0],
+                            [0.1, 0.4, 0.3, 0.2],
+                            [0, 0.1, 0.2, 0.7]]
+        
+            self.pi_init = [0.1, 0, 0]
 
-start_from_init_dist = False
+        elif not self.start_from_goal_dist and self.no_hidden_states == 3:
+            # Existing 3-state configuration when start_from_goal_dist is False
+            self.A_init = [[0.54, 0.26, 0.20],
+                            [0.19, 0.53, 0.28],
+                            [0.22, 0.18, 0.60]]
+        
+            self.B_init = [[0.5, 0.2, 0.11, 0.19],
+                            [0.22, 0.28, 0.23, 0.27],
+                            [0.19, 0.21, 0.15, 0.45]]
+        
+            self.pi_init = [0.3, 0.2, 0.5]
+
+        else:  # More than 3 states or other configurations
+            # Existing logic for 4 or 5 states
+            self.A_init = [[0.7, 0.05, 0.15, 0.05, 0.05],
+                            [0.1, 0.8, 0.05, 0.05, 0],
+                            [0.1, 0.1, 0.7, 0.1, 0],
+                            [0.05, 0.05, 0.05, 0.8, 0.05],
+                            [0.05, 0, 0.1, 0.05, 0.8]]
+        
+            self.B_init = [[0.7, 0.2, 0.1, 0, 0],
+                            [0.1, 0.4, 0.3, 0.2, 0],
+                            [0, 0.1, 0.2, 0.7, 0],
+                            [0, 0, 0, 0.8, 0.2],
+                            [0, 0, 0, 0.2, 0.8]]
+        
+            self.pi_init = [0.1, 0.15, 0.15, 0.4, 0.2]
+
+            # Sample number of hidden states rows and columns from A and B
+            self.A_init = self.A_init[:self.no_hidden_states]
+            self.B_init = self.B_init[:self.no_hidden_states]
+            self.A_init = [row[:self.no_hidden_states] for row in self.A_init]
+            self.B_init = [row[:self.no_hidden_states] for row in self.B_init]
+            self.pi_init = self.pi_init[:self.no_hidden_states]
+
 
 class HiddenMarkovModel:
     def __init__(self, A=None, B=None, pi=None, observations=None):
@@ -166,18 +221,16 @@ class HiddenMarkovModel:
                 numer = sum(gammas[t][i] for t in range(len(gammas)) if self.observation_sequence[t] == k)
                 self.emission_matrix[i][k] = numer / denom
 
-
     def train_model(self, observations):
-        self.observation_sequence = observations
-        if not self.observation_sequence:
-            raise ValueError("No observations provided for training.")
-
         max_iterations = 100000
         iterations = 0
         previous_log_prob = float('-inf')
-        convergence_threshold = 1e-4
+        convergence_threshold = 1e-10
 
         log_probabilities = []
+        transition_matrix_history = [deepcopy(self.transition_matrix)]
+        emission_matrix_history = [deepcopy(self.emission_matrix)]
+        initial_distribution_history = [deepcopy(self.initial_distribution)]
 
         while iterations < max_iterations:
             # Forward and backward passes
@@ -187,6 +240,11 @@ class HiddenMarkovModel:
             # Compute gammas and digammas
             gammas, digammas = self.compute_gammas(normalized_alphas, betas)
 
+            # Store previous matrices before re-estimation
+            prev_transition_matrix = deepcopy(self.transition_matrix)
+            prev_emission_matrix = deepcopy(self.emission_matrix)
+            prev_initial_distribution = deepcopy(self.initial_distribution)
+
             # Re-estimate parameters
             self.reestimate_parameters(gammas, digammas)
 
@@ -194,26 +252,84 @@ class HiddenMarkovModel:
             log_prob = -sum(math.log(c) for c in scaling_factors)
             log_probabilities.append(log_prob)
 
-            if abs(log_prob - previous_log_prob) < convergence_threshold:
+            # Detailed parameter change tracking
+            transition_change = self._compute_matrix_change(prev_transition_matrix, self.transition_matrix)
+            emission_change = self._compute_matrix_change(prev_emission_matrix, self.emission_matrix)
+            initial_dist_change = self._compute_vector_change(prev_initial_distribution, self.initial_distribution)
+
+            # Store matrices for history
+            transition_matrix_history.append(deepcopy(self.transition_matrix))
+            emission_matrix_history.append(deepcopy(self.emission_matrix))
+            initial_distribution_history.append(deepcopy(self.initial_distribution))
+
+            # Verbose output
+            #print(f"Iteration {iterations}:")
+            #print(f"Log Probability: {log_prob}")
+            #print(f"Transition Matrix Change: {transition_change}")
+            #print(f"Emission Matrix Change: {emission_change}")
+            #print(f"Initial Distribution Change: {initial_dist_change}")
+            #print("---")
+
+            # Convergence check with more robust criteria
+            if (iterations > 0 and 
+                transition_change < convergence_threshold and 
+                emission_change < convergence_threshold and 
+                initial_dist_change < convergence_threshold):
+                print("Converged based on parameter changes")
+                break
+
+            # Check log probability change
+            if iterations > 0 and abs(log_prob - previous_log_prob) < convergence_threshold:
+                print("Converged based on log probability")
                 break
 
             previous_log_prob = log_prob
             iterations += 1
 
-        # Print convergence information
-        print(f"Iterations: {iterations}")
-        #print("Log Probabilities:", log_probabilities)
+        # Print final matrices for comparison
+        print("\nFinal Transition Matrix:")
+        self.format_matrix(self.transition_matrix)
+        print("\nFinal Emission Matrix:")
+        self.format_matrix(self.emission_matrix)
+        print("\nFinal Initial Distribution:")
+        print(" ".join(map(str, self.initial_distribution)))
+
+        print(f"\nConverged after {iterations} iterations.")
+        return log_probabilities
+
+    def _compute_matrix_change(self, old_matrix, new_matrix):
+        """
+        Compute the maximum absolute change between two matrices
+        """
+        if not old_matrix or not new_matrix:
+            return float('inf')
         
-        # Output final matrices
-        #print(self.format_matrix(self.transition_matrix))
-        #print(self.format_matrix(self.emission_matrix))
+        max_change = 0
+        for i in range(len(old_matrix)):
+            for j in range(len(old_matrix[0])):
+                max_change = max(max_change, abs(old_matrix[i][j] - new_matrix[i][j]))
+        
+        return max_change
 
-
+    def _compute_vector_change(self, old_vector, new_vector):
+        """
+        Compute the maximum absolute change between two vectors
+        """
+        if not old_vector or not new_vector:
+            return float('inf')
+        
+        return max(abs(old - new) for old, new in zip(old_vector, new_vector))
+    
     def format_matrix(self, matrix):
+        """
+        Prints out the matrix in a matrix format.
+        """
         rows = len(matrix)
         cols = len(matrix[0])
-        flat = [round(val, 6) for row in matrix for val in row]
-        return f"{rows} {cols} " + " ".join(map(str, flat))
+        for i in range(rows):
+            for j in range(cols):
+                print(f"{matrix[i][j]:.6f}", end=" ")
+            print()
 
 def load_data_from_stdin():
     """
@@ -225,79 +341,108 @@ def load_data_from_stdin():
         observations.extend(map(int, line.strip().split()))
     valid_observation_symbols = [0, 1, 2, 3]
     observations = [o for o in observations if o in valid_observation_symbols]
-    #print("observations", observations)
     return observations
 
-def question_7(observations):
+def try_different_numbers_of_hidden_states(observations):
     """
-    Train an HMM model on provided observations.
+    Try different numbers of hidden states for the HMM.
     """
-    # Initialize parameters
-    if not start_from_init_dist:
-        A_initial = [[0.54, 0.26, 0.20],
-                    [0.19, 0.53, 0.28],
-                    [0.22, 0.18, 0.60]]
+    for num_states in [2, 3, 4, 5]:  # You can adjust this range
+        initial_dist = Distribution(start_from_goal_dist=True, no_hidden_states=num_states)
+        hmm = HiddenMarkovModel(initial_dist.A_init, initial_dist.B_init, initial_dist.pi_init)
+        hmm.load_input()
         
-        B_initial = [[0.5, 0.2, 0.11, 0.19],
-                [0.22, 0.28, 0.23, 0.27],
-                [0.19, 0.21, 0.15, 0.45]]
+        print(f"\n--- Training with {num_states} Hidden States ---")
+        hmm.train_model(observations)
 
+def create_uniform_distribution(num_states, num_symbols):
+    """
+    Create uniform distributions for A, B, and π
+    """
+    # Uniform transition matrix (each row sums to 1)
+    A_uniform = [[1/num_states for _ in range(num_states)] for _ in range(num_states)]
     
-        pi_initial = [0.3, 0.2, 0.5]
-    else:
-        A_initial = [[0.7, 0.05, 0.25],
-                    [0.1, 0.8, 0.1],
-                    [0.2, 0.3, 0.5]]
+    # Uniform emission matrix (each row sums to 1)
+    B_uniform = [[1/num_symbols for _ in range(num_symbols)] for _ in range(num_states)]
+    
+    # Uniform initial distribution
+    pi_uniform = [1/num_states for _ in range(num_states)]
+    
+    return A_uniform, B_uniform, pi_uniform
+
+def create_diagonal_distribution(num_states, num_symbols):
+    """
+    Create a diagonal transition matrix with π = [0, 0, 1] for a 3-state model
+    """
+    # Diagonal transition matrix
+    A_diagonal = [[1 if i == j else 0 for j in range(num_states)] for i in range(num_states)]
+    
+    # Uniform emission matrix (each row sums to 1)
+    B_diagonal = [[1/num_symbols for _ in range(num_symbols)] for _ in range(num_states)]
+    
+    # Specific initial distribution [0, 0, 1]
+    pi_diagonal = [1 if i == num_states-1 else 0 for i in range(num_states)]
+    
+    return A_diagonal, B_diagonal, pi_diagonal
+
+def create_goal_similar_distribution(num_states, num_symbols):
+    """
+    Create matrices close to the goal distribution
+    """
+    # Similar to the goal distribution, but slightly perturbed
+    A_similar = [
+        [0.6, 0.1, 0.3],
+        [0.15, 0.7, 0.15],
+        [0.25, 0.25, 0.5]
+    ][:num_states]
+    A_similar = [row[:num_states] for row in A_similar]
+    
+    B_similar = [
+        [0.6, 0.2, 0.1, 0.1],
+        [0.2, 0.3, 0.3, 0.2],
+        [0.1, 0.1, 0.2, 0.6]
+    ][:num_states]
+    B_similar = [row[:num_symbols] for row in B_similar]
+    
+    # Initial distribution close to goal
+    pi_similar = [0.2, 0.1, 0.7][:num_states]
+    
+    return A_similar, B_similar, pi_similar
+
+def explore_initialization_strategies(observations, num_states=3):
+    """
+    Explore different initialization strategies for Baum-Welch algorithm
+    """
+    strategies = [
+        ("Uniform Distribution", create_uniform_distribution),
+        ("Diagonal Matrix with π[0,0,1]", create_diagonal_distribution),
+        ("Close to Goal Distribution", create_goal_similar_distribution)
+    ]
+    
+    for strategy_name, init_func in strategies:
+        print(f"\n{'=' * 50}")
+        print(f"Exploring: {strategy_name}")
+        print(f"Number of Hidden States: {num_states}")
+        print(f"{'=' * 50}")
         
-        B_initial = [[0.7, 0.2, 0.1, 0.0],
-                [0.1, 0.4, 0.3, 0.2],
-                [0, 0.1, 0.2, 0.7]]
-    
-        pi_initial = [0.1, 0, 0]
-
-    # Initialize HMM
-    hmm = HiddenMarkovModel(A_initial, B_initial, pi_initial)
-    distribuion = InitialDistribution()
-    
-    # Train the HMM
-    hmm.train_model(observations)  # Assuming train_model accepts observations as an argument
-
-    # Output trained parameters
-    #print("Trained parameters:")
-    #print("A:", hmm.transition_matrix)
-    #print("B:", hmm.emission_matrix)
-    #print("pi:", hmm.initial_distribution)
-
-    # Detailed difference calculations
-    calculate_and_print_differences(A_initial, hmm.transition_matrix, "Transition Matrix (A)")
-    calculate_and_print_differences(B_initial, hmm.emission_matrix, "Emission Matrix (B)")
-    calculate_and_print_differences(
-        [[x] for x in pi_initial], 
-        [[x] for x in hmm.initial_distribution], 
-        "Initial Distribution (π)"
-    )
-
-def calculate_difference(matrix1, matrix2):
-    """
-    Calculate the element-wise difference between two matrices.
-    """
-    return [[abs(matrix1[i][j] - matrix2[i][j]) for j in range(len(matrix1[0]))] for i in range(len(matrix1))]
-
-def calculate_and_print_differences(matrix1, matrix2, matrix_name):
-    """
-    Calculate and print differences with more detailed formatting
-    """
-    differences = calculate_difference(matrix1, matrix2)
-    print(f"\n{matrix_name} Differences:")
-    for row in differences:
-        print(" ".join(f"{diff:.6f}" for diff in row))
-    
-    # Calculate and print some summary statistics
-    all_diffs = [diff for row in differences for diff in row]
-    print(f"\n{matrix_name} Difference Statistics:")
-    print(f"Mean Absolute Difference: {sum(all_diffs) / len(all_diffs):.6f}")
-    print(f"Max Difference: {max(all_diffs):.6f}")
-    
+        # Create initial distributions
+        A_init, B_init, pi_init = init_func(num_states, 4)  # 4 observation symbols
+        
+        # Create and train HMM
+        hmm = HiddenMarkovModel(A_init, B_init, pi_init)
+        hmm.observation_sequence = observations
+        
+        print("\nInitial Transition Matrix (A):")
+        hmm.format_matrix(hmm.transition_matrix)
+        
+        print("\nInitial Emission Matrix (B):")
+        hmm.format_matrix(hmm.emission_matrix)
+        
+        print("\nInitial Distribution (π):")
+        print(" ".join(map(str, hmm.initial_distribution)))
+        
+        # Train the model
+        hmm.train_model(observations)
 
 
 def main():
@@ -305,7 +450,30 @@ def main():
     Main function to load data from stdin and run the HMM training.
     """
     observations = load_data_from_stdin()
-    question_7(observations)
+
+    #try_different_numbers_of_hidden_states(observations)
+    for num_states in [3]:
+        explore_initialization_strategies(observations, num_states)
+
+def explore_hidden_states(observations):
+    """
+    Explore the impact of different numbers of hidden states
+    """
+    goal_dist_options = [True, False]
+    state_options = [2, 3, 4, 5]
+    
+    for goal_dist in goal_dist_options:
+        print(f"\n{'=' * 20}")
+        print(f"Exploring with start_from_goal_dist = {goal_dist}")
+        print(f"{'=' * 20}")
+        
+        for num_states in state_options:
+            initial_dist = Distribution(start_from_goal_dist=goal_dist, no_hidden_states=num_states)
+            hmm = HiddenMarkovModel(initial_dist.A_init, initial_dist.B_init, initial_dist.pi_init)
+            hmm.load_input()
+            
+            print(f"\n--- Training with {num_states} Hidden States ---")
+            hmm.train_model(observations)
 
 if __name__ == "__main__":
     main()
