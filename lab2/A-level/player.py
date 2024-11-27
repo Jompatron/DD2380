@@ -27,9 +27,10 @@ class PlayerControllerHMM(PlayerControllerHMMAbstract):
         # Count matrices for updating probabilities
         self.emission_counts = np.ones((self.n_species, self.n_emissions)) * 0.1  # Laplace smoothing
         self.transition_counts = np.ones((self.n_species, self.n_species)) * 0.1
-        self.species_counts = defaultdict(lambda: defaultdict(int))
+        #self.species_counts = defaultdict(lambda: defaultdict(int))
         
         # Minimum observations before making a guess
+        # For Kattis, set this to 80
         self.min_observations = 10
         
         # Confidence threshold for making guesses
@@ -46,10 +47,11 @@ class PlayerControllerHMM(PlayerControllerHMMAbstract):
         """
 
         # Update observation sequences
+        # Use fish_id as index and append new observations to this fish's sequence
         for fish_id, obs in enumerate(observations):
             if fish_id not in self.fish_types:
                 self.observations[fish_id].append(obs)
-        
+
         # Only guess if we have enough observations
         for fish_id, obs_seq in self.observations.items():
             if fish_id not in self.fish_types and len(obs_seq) >= self.min_observations:
@@ -74,6 +76,7 @@ class PlayerControllerHMM(PlayerControllerHMMAbstract):
         :return:
         """
         self.fish_types[fish_id] = true_type
+        #print(f"Revealed fish {fish_id} as type {true_type}")
         obs_seq = self.observations[fish_id]
         
         # Update emission counts
@@ -81,9 +84,9 @@ class PlayerControllerHMM(PlayerControllerHMMAbstract):
             self.emission_counts[true_type, obs] += 1
         
         # Update transition counts
-        for i in range(len(obs_seq) - 1):
-            curr_obs = obs_seq[i]
-            next_obs = obs_seq[i + 1]
+        for _ in range(len(obs_seq) - 1):
+            #curr_obs = obs_seq[i]
+            #next_obs = obs_seq[i + 1]
             self.transition_counts[true_type, true_type] += 1
         
         # Update probability matrices
@@ -130,30 +133,4 @@ class PlayerControllerHMM(PlayerControllerHMMAbstract):
                     for s2 in range(self.n_species)
                 )
         
-        return alpha[-1]
-
-    def _viterbi(self, obs_seq):
-        """
-        Viterbi algorithm to find the most likely species.
-        """
-        T = len(obs_seq)
-        dp = np.zeros((self.n_species, T))
-        backtrack = np.zeros((self.n_species, T), dtype=int)
-
-        # Initialize base cases
-        for s in range(self.n_species):
-            dp[s, 0] = self.initial_probs[s] * self.emission_probs[s, obs_seq[0]]
-
-        # Fill DP table
-        for t in range(1, T):
-            for s in range(self.n_species):
-                probabilities = [
-                    dp[prev_s, t - 1] * self.transition_probs[prev_s, s] * self.emission_probs[s, obs_seq[t]]
-                    for prev_s in range(self.n_species)
-                ]
-                dp[s, t] = max(probabilities)
-                backtrack[s, t] = np.argmax(probabilities)
-
-        # Backtrack to find the most likely sequence
-        most_likely_species = np.argmax(dp[:, -1])
-        return most_likely_species
+        return alpha[-1] # Return probabilities for last time step
