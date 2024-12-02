@@ -27,11 +27,10 @@ class PlayerControllerHMM(PlayerControllerHMMAbstract):
         # Count matrices for updating probabilities
         self.emission_counts = np.ones((self.n_species, self.n_emissions)) * 0.1  # Laplace smoothing
         self.transition_counts = np.ones((self.n_species, self.n_species)) * 0.1
-        #self.species_counts = defaultdict(lambda: defaultdict(int))
         
         # Minimum observations before making a guess
         # For Kattis, set this to 80
-        self.min_observations = 10
+        self.min_observations = 80
         
         # Confidence threshold for making guesses
         self.confidence_threshold = 0.6
@@ -85,8 +84,6 @@ class PlayerControllerHMM(PlayerControllerHMMAbstract):
         
         # Update transition counts
         for _ in range(len(obs_seq) - 1):
-            #curr_obs = obs_seq[i]
-            #next_obs = obs_seq[i + 1]
             self.transition_counts[true_type, true_type] += 1
         
         # Update probability matrices
