@@ -74,8 +74,10 @@ class HiddenMarkovModel:
     def backward_pass(self, scaling_factors):
         num_states = len(self.transition_matrix)
         num_observations = len(self.observation_sequence)
-        beta_values = [[scaling_factors[-1]] * num_states for _ in range(num_observations)]
-
+        # beta_values = [[scaling_factors[-1]] * num_states for _ in range(num_observations)]
+        # Init beta values in last time step to 1
+        beta_values = [[1] * num_states for _ in range(num_observations)]
+        #print("Beta values: ", beta_values)
         # Compute beta_t
         for time in range(num_observations - 2, -1, -1):
             for state in range(num_states):
@@ -93,6 +95,9 @@ class HiddenMarkovModel:
         num_observations = len(self.observation_sequence)
         gammas = []
         digammas = []
+
+        #denom = sum(normalized_alphas[-1])
+        #print(denom)
 
         for time in range(num_observations - 1):
             gamma_t = [0] * num_states
